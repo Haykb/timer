@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EMBA Exam Timer</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --text: #1b1b1b; --muted: #6b6b6b;
+    --border: #e2e2de; --accent: #2457d6; --ok: #1f8a4c; --warn: #b7791f; --bad: #c53030;
+    --track: #ececea; --shadow: 0 6px 24px rgba(0,0,0,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141414; --panel: #1e1e1e; --text: #eeeeee; --muted: #9a9a9a;
+      --border: #2e2e2e; --accent: #6f9bff; --ok: #4cc27f; --warn: #f0b44c; --bad: #ff6b6b;
+      --track: #2a2a2a; --shadow: 0 6px 24px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141414; --panel: #1e1e1e; --text: #eeeeee; --muted: #9a9a9a;
+    --border: #2e2e2e; --accent: #6f9bff; --ok: #4cc27f; --warn: #f0b44c; --bad: #ff6b6b;
+    --track: #2a2a2a; --shadow: 0 6px 24px rgba(0,0,0,.5);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 650; }
+  header .clock { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  h2 { font-size: 15px; margin: 0 0 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); padding: 8px 14px; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.big { padding: 14px 22px; font-size: 18px; }
+  button.icon { padding: 4px 8px; min-width: 32px; }
+  button:disabled { opacity: .4; cursor: default; }
+  input[type=text], input[type=number], input[type=time] {
+    font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; width: 100%; }
+  input[type=number] { width: 72px; }
+  input[type=time] { width: auto; }
+  label { cursor: pointer; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .muted { color: var(--muted); }
+  .num { font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  /* Plan editor */
+  table.plan { width: 100%; border-collapse: collapse; }
+  table.plan th { text-align: left; font-weight: 600; color: var(--muted); font-size: 13px; padding: 4px 6px; }
+  table.plan td { padding: 4px 6px; border-top: 1px solid var(--border); vertical-align: middle; }
+  table.plan td.clock { white-space: nowrap; color: var(--muted); font-size: 14px; }
+  table.plan td.acts { white-space: nowrap; text-align: right; }
+  .total { margin-top: 10px; font-weight: 600; }
+  .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
+  @media (max-width: 640px) {
+    .settings-grid { grid-template-columns: 1fr; }
+    table.plan td.clock, table.plan th.clock { display: none; }
+  }
+
+  /* Run view */
+  .now-card { text-align: center; padding: 22px 16px; }
+  .now-label { color: var(--muted); font-size: 14px; text-transform: uppercase; letter-spacing: .06em; }
+  .now-name { font-size: clamp(22px, 5vw, 34px); font-weight: 700; margin: 4px 0 6px; }
+  .countdown { font-size: clamp(56px, 16vw, 104px); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .countdown.warn { color: var(--warn); }
+  .countdown.bad { color: var(--bad); }
+  .sub { color: var(--muted); margin-top: 8px; }
+  .bar { height: 10px; background: var(--track); border-radius: 6px; overflow: hidden; margin-top: 16px; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .4s linear; }
+  .bar.warn > div { background: var(--warn); }
+  .bar.bad > div { background: var(--bad); }
+  .status { margin-top: 14px; font-weight: 600; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); }
+  .status.ok { color: var(--ok); }
+  .status.warn { color: var(--warn); border-color: var(--warn); }
+  .status.bad { color: var(--bad); border-color: var(--bad); }
+  .controls { display: flex; gap: 10px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
+  .stats .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stats .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .next-card { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .next-card .name { font-size: 20px; font-weight: 650; }
+
+  ol.timeline { list-style: none; margin: 0; padding: 0; }
+  ol.timeline li { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center;
+    padding: 8px 4px; border-top: 1px solid var(--border); }
+  ol.timeline li:first-child { border-top: 0; }
+  ol.timeline .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--muted); justify-self: center; }
+  ol.timeline li.done { color: var(--muted); }
+  ol.timeline li.done .dot { background: var(--muted); }
+  ol.timeline li.cur { font-weight: 650; }
+  ol.timeline li.cur .dot { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
+  ol.timeline .meta { font-size: 13px; color: var(--muted); font-weight: 400; }
+  ol.timeline .right { text-align: right; font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .chg-down { color: var(--bad); }
+  .chg-up { color: var(--ok); }
+
+  /* Toasts and modal */
+  #toasts { position: fixed; top: 12px; right: 12px; left: 12px; display: flex; flex-direction: column;
+    align-items: flex-end; gap: 8px; z-index: 50; pointer-events: none; }
+  .toast { pointer-events: auto; max-width: 420px; width: 100%; background: var(--panel); border: 1px solid var(--border);
+    border-left: 6px solid var(--accent); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); }
+  .toast.warn { border-left-color: var(--warn); }
+  .toast.move, .toast.over, .toast.final { border-left-color: var(--bad); }
+  .toast .t { font-weight: 700; }
+  .toast .b { margin-top: 2px; }
+  .toast .x { float: right; border: 0; background: none; padding: 0 0 0 8px; color: var(--muted); }
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center;
+    justify-content: center; padding: 16px; z-index: 60; }
+  #modal .card { background: var(--panel); border-radius: 14px; padding: 26px 22px; max-width: 520px; width: 100%;
+    text-align: center; box-shadow: var(--shadow); border-top: 6px solid var(--bad); }
+  #modal .k { color: var(--muted); text-transform: uppercase; font-size: 13px; letter-spacing: .06em; }
+  #modal .big { font-size: 28px; font-weight: 750; margin: 8px 0; }
+  #modal p { margin: 6px 0; }
+
+  table.summary { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.summary th, table.summary td { padding: 6px; border-top: 1px solid var(--border); text-align: right; }
+  table.summary th:first-child, table.summary td:first-child { text-align: left; }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>EMBA Exam Timer</h1>
+    <div class="row">
+      <span class="clock num" id="wallclock">--:--:--</span>
+      <button class="icon" id="themeBtn" title="Toggle theme">◐</button>
+    </div>
+  </header>
+
+  <!-- ================= SETUP ================= -->
+  <section id="setup">
+    <div class="panel">
+      <h2>Plan</h2>
+      <table class="plan">
+        <thead><tr>
+          <th>Block</th><th>Min</th><th class="clock">Clock</th>
+          <th title="Fixed blocks keep their minutes when the plan is rebalanced">Fixed</th><th></th>
+        </tr></thead>
+        <tbody id="planBody"></tbody>
+      </table>
+      <div class="row" style="margin-top:10px; justify-content:space-between">
+        <div class="row">
+          <button id="addBlock">+ Add block</button>
+          <button id="resetPlan">Restore default plan</button>
+        </div>
+        <div class="total" id="planTotal"></div>
+      </div>
+      <p class="muted" style="margin:10px 0 0;font-size:14px">
+        <b>Fixed</b> blocks keep their length when you run late or early. All other blocks grow or shrink in proportion, so you still finish by the end time.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>Start</h2>
+      <div class="row" style="gap:18px">
+        <label><input type="radio" name="startMode" value="now" checked> Start now</label>
+        <label><input type="radio" name="startMode" value="at"> Exam starts / started at</label>
+        <input type="time" id="startAt" value="10:00">
+      </div>
+      <p class="muted" style="font-size:14px;margin:8px 0 0">
+        If you choose a time that has already passed (e.g. you open this at 10:04 for a 10:00 start), the timer counts from that time.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>Alerts</h2>
+      <div class="settings-grid">
+        <label class="row">Heads-up <input type="number" id="warnMin" min="0" max="15" step="0.5"> min before a block ends</label>
+        <label class="row">Repeat "move on" every <input type="number" id="nagMin" min="1" max="15" step="1"> min while over</label>
+        <label class="row"><input type="checkbox" id="sound"> Sound</label>
+        <label class="row"><input type="checkbox" id="autoAdvance"> Auto-advance when a block's time is up</label>
+        <div class="row">
+          <button id="notifBtn">Enable desktop notifications</button>
+          <span class="muted" id="notifState" style="font-size:14px"></span>
+        </div>
+        <div class="row"><button id="testBtn">Test an alert</button></div>
+      </div>
+    </div>
+
+    <div class="row" style="justify-content:center;margin:20px 0 40px">
+      <button class="primary big" id="startBtn">Start exam timer</button>
+    </div>
+  </section>
+
+  <!-- ================= RUN ================= -->
+  <section id="run" class="hidden">
+    <div class="panel now-card">
+      <div class="now-label" id="nowLabel">Now</div>
+      <div class="now-name" id="nowName">—</div>
+      <div class="countdown" id="countdown">00:00</div>
+      <div class="sub" id="nowSub"></div>
+      <div class="bar" id="blockBar"><div></div></div>
+      <div class="status ok" id="status">On track</div>
+      <div class="controls">
+        <button class="primary big" id="nextBtn">Next stage <kbd>N</kbd></button>
+        <button id="undoBtn">Undo <kbd>U</kbd></button>
+      </div>
+    </div>
+
+    <div class="panel next-card" id="nextCard">
+      <div>
+        <div class="muted" style="font-size:13px;text-transform:uppercase;letter-spacing:.05em">Up next</div>
+        <div class="name" id="nextName">—</div>
+        <div class="muted" id="nextMeta"></div>
+      </div>
+    </div>
+
+    <div class="panel stats">
+      <div><div class="v" id="stRemain">--</div><div class="k">Exam time left</div></div>
+      <div><div class="v" id="stEnd">--</div><div class="k">Hard end</div></div>
+      <div><div class="v" id="stPace">--</div><div class="k">vs. plan</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Timeline</h2>
+      <div class="bar" style="margin:0 0 10px"><div id="overallBar"></div></div>
+      <ol class="timeline" id="timeline"></ol>
+    </div>
+
+    <div class="panel hidden" id="summaryPanel">
+      <h2>Summary</h2>
+      <table class="summary" id="summary"></table>
+    </div>
+
+    <div class="row" style="justify-content:center;margin:10px 0 40px">
+      <button id="stopBtn">End &amp; back to setup</button>
+    </div>
+  </section>
+</div>
+
+<div id="toasts" aria-live="assertive"></div>
+<div id="modal" class="hidden" role="alertdialog" aria-modal="true">
+  <div class="card">
+    <div class="k" id="mK">Time's up</div>
+    <div class="big" id="mTitle"></div>
+    <p id="mBody"></p>
+    <div class="controls">
+      <button class="primary big" id="mMove">Move on now</button>
+      <button id="mLater">Not yet</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Defaults ----------
+  const DEFAULT_PLAN = [
+    { name: 'Skim', min: 8, fixed: false },
+    { name: 'Reading and numbers', min: 27, fixed: false },
+    { name: 'Block 3 (unlabeled, rename me)', min: 20, fixed: false },
+    { name: 'Introduction and objectives', min: 15, fixed: false },
+    { name: 'Block 5 (unlabeled, rename me)', min: 35, fixed: false },
+    { name: 'Recommendations', min: 30, fixed: false },
+    { name: 'Conclusion', min: 6, fixed: false },
+    { name: 'Check (word count, names, numbers)', min: 4, fixed: true },
+  ];
+  const DEFAULT_SETTINGS = { warnMin: 2, nagMin: 2, sound: true, autoAdvance: false };
+  const MIN = 60000;
+  const STALE_MS = 3 * MIN; // alerts older than this (e.g. after a reload) are skipped silently
+
+  // ---------- Storage (never trusted to exist) ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+
+  let plan = store.get('emba.plan', null) || clone(DEFAULT_PLAN);
+  let settings = Object.assign({}, DEFAULT_SETTINGS, store.get('emba.settings', {}));
+  let run = store.get('emba.run', null);
+  const savePlan = () => store.set('emba.plan', plan);
+  const saveSettings = () => store.set('emba.settings', settings);
+  const saveRun = () => run ? store.set('emba.run', run) : store.del('emba.run');
+
+  // ---------- Helpers ----------
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmtClock = (ts) => { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const fmtDur = (ms) => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    return h ? `${h}:${pad(m)}:${pad(r)}` : `${pad(m)}:${pad(r)}`;
+  };
+  const fmtMin = (ms) => {
+    const m = ms / MIN;
+    const r = Math.round(m * 2) / 2; // nearest half minute
+    return (Number.isInteger(r) ? r : r.toFixed(1)) + ' min';
+  };
+  const planTotalMin = (p) => p.reduce((a, b) => a + (Number(b.min) || 0), 0);
+
+  // ---------- Plan editor ----------
+  function renderPlan() {
+    const body = $('planBody');
+    body.textContent = '';
+    let base = startBaseTs();
+    plan.forEach((b, i) => {
+      const tr = document.createElement('tr');
+      const s = base, e = base + b.min * MIN; base = e;
+      tr.innerHTML = `
+        <td><input type="text" data-k="name"></td>
+        <td><input type="number" min="0.5" max="300" step="0.5" data-k="min"></td>
+        <td class="clock num">${fmtClock(s)}–${fmtClock(e)}</td>
+        <td style="text-align:center"><input type="checkbox" data-k="fixed"></td>
+        <td class="acts">
+          <button class="icon" data-a="up" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="icon" data-a="down" title="Move down" ${i === plan.length - 1 ? 'disabled' : ''}>↓</button>
+          <button class="icon" data-a="del" title="Remove" ${plan.length <= 1 ? 'disabled' : ''}>✕</button>
+        </td>`;
+      const nameIn = tr.querySelector('[data-k=name]');
+      const minIn = tr.querySelector('[data-k=min]');
+      const fixIn = tr.querySelector('[data-k=fixed]');
+      nameIn.value = b.name; minIn.value = b.min; fixIn.checked = !!b.fixed;
+      nameIn.addEventListener('input', () => { b.name = nameIn.value; savePlan(); });
+      minIn.addEventListener('change', () => {
+        const v = Math.max(0.5, Math.min(300, Number(minIn.value) || 0.5));
+        b.min = v; savePlan(); renderPlan();
+      });
+      fixIn.addEventListener('change', () => { b.fixed = fixIn.checked; savePlan(); });
+      tr.querySelectorAll('[data-a]').forEach(btn => btn.addEventListener('click', () => {
+        const a = btn.dataset.a;
+        if (a === 'up' && i > 0) [plan[i - 1], plan[i]] = [plan[i], plan[i - 1]];
+        if (a === 'down' && i < plan.length - 1) [plan[i + 1], plan[i]] = [plan[i], plan[i + 1]];
+        if (a === 'del' && plan.length > 1) plan.splice(i, 1);
+        savePlan(); renderPlan();
+      }));
+      body.appendChild(tr);
+    });
+    const tot = planTotalMin(plan);
+    $('planTotal').textContent = `Total ${tot} min · ends ${fmtClock(startBaseTs() + tot * MIN)}`;
+  }
+
+  function startBaseTs() {
+    const mode = document.querySelector('input[name=startMode]:checked').value;
+    if (mode === 'now') return Date.now();
+    return tsForTime($('startAt').value);
+  }
+  function tsForTime(hhmm) {
+    const [h, m] = (hhmm || '10:00').split(':').map(Number);
+    const d = new Date(); d.setHours(h || 0, m || 0, 0, 0);
+    return d.getTime();
+  }
+
+  // ---------- Run model ----------
+  // run = { startTs, endTs, idx, done, plan:[{name,min,fixed}],
+  //         blocks:[{plannedStart, plannedEnd, budget, actualStart, actualEnd}], fired:{}, history:[] }
+
+  function createRun(startTs) {
+    const p = clone(plan).map(b => ({ name: (b.name || '').trim() || 'Untitled block', min: Number(b.min) || 1, fixed: !!b.fixed }));
+    let t = startTs;
+    const blocks = p.map(b => {
+      const s = t; t += b.min * MIN;
+      return { plannedStart: s, plannedEnd: t, budget: b.min * MIN, actualStart: null, actualEnd: null };
+    });
+    const r = { startTs, endTs: t, idx: 0, done: false, plan: p, blocks, fired: {}, history: [] };
+    blocks[0].actualStart = startTs;
+    return r;
+  }
+
+  // Budgets for blocks from..end, given that block `from` starts at time t,
+  // so that everything still fits before the hard end.
+  function budgetsFrom(r, from, t) {
+    const R = Math.max(0, r.endTs - t);
+    const rest = r.plan.slice(from);
+    const fixedSum = rest.filter(b => b.fixed).reduce((a, b) => a + b.min * MIN, 0);
+    const flexSum = rest.filter(b => !b.fixed).reduce((a, b) => a + b.min * MIN, 0);
+    const avail = R - fixedSum;
+    let flexF, fixF;
+    if (avail >= 0) { flexF = flexSum > 0 ? avail / flexSum : 0; fixF = flexSum > 0 ? 1 : (fixedSum > 0 ? R / fixedSum : 0); }
+    else { flexF = 0; fixF = fixedSum > 0 ? R / fixedSum : 0; }
+    return rest.map(b => b.min * MIN * (b.fixed ? fixF : flexF));
+  }
+
+  // Live projection: if the current block runs past its budget, later blocks shrink.
+  function projectedBudgets(now) {
+    const r = run, i = r.idx;
+    if (r.done || i >= r.plan.length - 1) return [];
+    const cur = r.blocks[i];
+    const curEnd = Math.max(now, cur.actualStart + cur.budget);
+    return budgetsFrom(r, i + 1, curEnd);
+  }
+
+  function advance() {
+    if (!run || run.done) return;
+    const now = Date.now();
+    if (now < run.startTs) return;
+    run.history.push(clone({ idx: run.idx, done: run.done, blocks: run.blocks }));
+    const cur = run.blocks[run.idx];
+    cur.actualEnd = now;
+    if (run.idx < run.plan.length - 1) {
+      run.idx++;
+      const b = budgetsFrom(run, run.idx, now);
+      b.forEach((ms, k) => { run.blocks[run.idx + k].budget = ms; });
+      run.blocks[run.idx].actualStart = now;
+    } else {
+      run.done = true;
+    }
+    closeModal();
+    saveRun(); render();
+  }
+
+  function undo() {
+    if (!run || !run.history.length) return;
+    const h = run.history.pop();
+    run.idx = h.idx; run.done = h.done; run.blocks = h.blocks;
+    // allow the alerts of the restored block to fire again if still relevant
+    Object.keys(run.fired).forEach(k => { if (k.startsWith(`b${run.idx}:`)) delete run.fired[k]; });
+    closeModal();
+    saveRun(); render();
+  }
+
+  // ---------- Alerts ----------
+  function fire(key, threshold, now, fn) {
+    if (run.fired[key]) return;
+    run.fired[key] = true; saveRun();
+    if (now - threshold > STALE_MS) return; // missed long ago (reload / sleep): don't spam
+    fn();
+  }
+
+  function checkAlerts(now) {
+    const r = run;
+    if (now < r.startTs) return;
+    fire('start', r.startTs, now, () => {
+      const b = r.blocks[0];
+      notify('move', `Exam started: ${r.plan[0].name}`, `${fmtMin(b.budget)} — until ${fmtClock(b.actualStart + b.budget)}.`);
+    });
+    if (r.done) return;
+
+    const i = r.idx, cur = r.blocks[i], name = r.plan[i].name;
+    const end = cur.actualStart + cur.budget;
+    const hasNext = i < r.plan.length - 1;
+    const proj = projectedBudgets(now);
+    const nextName = hasNext ? r.plan[i + 1].name : null;
+    const nextLine = hasNext
+      ? `Next: ${nextName} — ${fmtMin(proj[0])}${proj[0] < r.plan[i + 1].min * MIN - 30000 ? ` (planned ${r.plan[i + 1].min})` : ''}.`
+      : 'This is the last block. Finish before the hard end.';
+
+    const warnMs = settings.warnMin * MIN;
+    if (warnMs > 0 && cur.budget > warnMs && now >= end - warnMs && now < end) {
+      fire(`b${i}:warn`, end - warnMs, now, () =>
+        notify('warn', `${fmtMin(end - now)} left: ${name}`, `Start wrapping up. ${nextLine}`));
+    }
+
+    if (now >= end) {
+      fire(`b${i}:end`, end, now, () => {
+        if (settings.autoAdvance) {
+          advance();
+          if (hasNext) notify('move', `Moved to: ${nextName}`, `Auto-advanced. ${fmtMin(run.blocks[run.idx].budget)} — until ${fmtClock(run.blocks[run.idx].actualStart + run.blocks[run.idx].budget)}.`);
+          else notify('final', 'All blocks done', 'Final block time is up.');
+          return;
+        }
+        notify('move', hasNext ? `Move on → ${nextName}` : `Time's up: ${name}`,
+          hasNext ? `"${name}" is out of time. ${nextLine}` : 'Last block is out of time. Wrap up now.');
+        openModal(now);
+      });
+      if (run.idx !== i || run.done) return; // auto-advanced: next tick evaluates the new block
+      const nagMs = Math.max(1, settings.nagMin) * MIN;
+      const k = Math.floor((now - end) / nagMs);
+      if (k >= 1 && !settings.autoAdvance) {
+        fire(`b${i}:nag${k}`, end + k * nagMs, now, () => {
+          const shrink = shrinkText(now);
+          notify('over', `${fmtMin(now - end)} over on ${name}`,
+            (hasNext ? `Move to ${nextName} now. ` : 'Wrap up now. ') + shrink);
+          if (hasNext) openModal(now);
+        });
+      }
+    }
+
+    // Global end-of-exam warnings
+    [[15, '15 min of exam time left'], [10, '10 min of exam time left'], [5, '5 min of exam time left']].forEach(([m, t]) => {
+      const th = r.endTs - m * MIN;
+      if (now >= th && now < r.endTs) {
+        fire(`g${m}`, th, now, () => notify('final', t, `You are on "${name}". Hard end at ${fmtClock(r.endTs)}.${i < r.plan.length - 1 ? ' Make sure you reach the last block.' : ''}`));
+      }
+    });
+    if (now >= r.endTs) fire('g0', r.endTs, now, () => notify('final', 'Exam time is over', 'Hard end reached.'));
+  }
+
+  function shrinkText(now) {
+    const proj = projectedBudgets(now);
+    const parts = [];
+    proj.forEach((ms, k) => {
+      const b = run.plan[run.idx + 1 + k];
+      if (b.fixed) return;
+      const d = ms - b.min * MIN;
+      if (d < -30000) parts.push(`${b.name} ${b.min}→${Math.max(0, Math.round(ms / MIN * 2) / 2)}`);
+    });
+    return parts.length ? `Later blocks shrink: ${parts.slice(0, 3).join(', ')}${parts.length > 3 ? '…' : ''} min.` : '';
+  }
+
+  // ---------- Notification channels ----------
+  let audioCtx = null;
+  function unlockAudio() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch {}
+  }
+  function beep(kind) {
+    if (!settings.sound || !audioCtx) return;
+    const pattern = { warn: [[660, .15]], move: [[880, .18], [0, .08], [880, .18], [0, .08], [1100, .3]],
+      over: [[520, .25], [0, .1], [520, .25]], final: [[1000, .2], [0, .1], [1000, .2], [0, .1], [1000, .2]] }[kind] || [[700, .2]];
+    let t = audioCtx.currentTime + 0.02;
+    pattern.forEach(([f, d]) => {
+      if (f) {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+        o.connect(g).connect(audioCtx.destination);
+        o.start(t); o.stop(t + d + 0.02);
+      }
+      t += d;
+    });
+  }
+
+  function notify(kind, title, body) {
+    toast(kind, title, body);
+    beep(kind);
+    try { if (navigator.vibrate && kind !== 'warn') navigator.vibrate([200, 100, 200]); } catch {}
+    try {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        const n = new Notification(title, { body, tag: 'emba-timer', renotify: true, requireInteraction: kind !== 'warn' });
+        n.onclick = () => { window.focus(); n.close(); };
+      }
+    } catch {}
+    flashTitle(title);
+  }
+
+  function toast(kind, title, body) {
+    const el = document.createElement('div');
+    el.className = `toast ${kind}`;
+    const x = document.createElement('button'); x.className = 'x'; x.textContent = '✕'; x.setAttribute('aria-label', 'Dismiss');
+    const t = document.createElement('div'); t.className = 't'; t.textContent = title;
+    const b = document.createElement('div'); b.className = 'b'; b.textContent = body;
+    el.append(x, t, b);
+    x.onclick = () => el.remove();
+    const box = $('toasts');
+    box.prepend(el);
+    while (box.children.length > 4) box.lastChild.remove();
+    setTimeout(() => el.remove(), kind === 'warn' ? 20000 : 60000);
+  }
+
+  let flashTimer = null, flashMsg = '';
+  function flashTitle(msg) {
+    flashMsg = msg;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { flashMsg = ''; }, 12000);
+  }
+
+  function openModal(now) {
+    if (!run || run.done) return;
+    const i = run.idx, hasNext = i < run.plan.length - 1;
+    const cur = run.blocks[i], end = cur.actualStart + cur.budget;
+    const proj = projectedBudgets(now);
+    $('mK').textContent = now - end > 30000 ? `${fmtMin(now - end)} over on "${run.plan[i].name}"` : `Time's up on "${run.plan[i].name}"`;
+    if (hasNext) {
+      $('mTitle').textContent = `→ ${run.plan[i + 1].name}`;
+      const pm = run.plan[i + 1].min;
+      const planned = Math.abs(proj[0] - pm * MIN) > 30000 ? ` (planned ${pm} min)` : '';
+      $('mBody').textContent = `Budget ${fmtMin(proj[0])}${planned} if you move now, until ${fmtClock(Math.max(now, end) + proj[0])}. ${shrinkText(now)}`;
+      $('mMove').textContent = 'Move on now';
+    } else {
+      $('mTitle').textContent = 'Finish up';
+      $('mBody').textContent = `Hard end at ${fmtClock(run.endTs)}.`;
+      $('mMove').textContent = 'Mark done';
+    }
+    $('modal').classList.remove('hidden');
+    $('mMove').focus();
+  }
+  function closeModal() { $('modal').classList.add('hidden'); }
+
+  // ---------- Render ----------
+  function showView() {
+    $('setup').classList.toggle('hidden', !!run);
+    $('run').classList.toggle('hidden', !run);
+  }
+
+  function render() {
+    const now = Date.now();
+    $('wallclock').textContent = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    showView();
+    if (!run) { document.title = 'EMBA Exam Timer'; return; }
+
+    const r = run, i = r.idx, cur = r.blocks[i];
+    const n = r.plan.length;
+
+    // Exam totals
+    $('stRemain').textContent = now < r.startTs ? fmtDur(r.endTs - r.startTs) : fmtDur(r.endTs - now);
+    $('stEnd').textContent = fmtClock(r.endTs);
+
+    // Pace vs original plan (positive = behind)
+    let drift = 0;
+    if (r.done) drift = r.blocks[n - 1].actualEnd - r.blocks[n - 1].plannedEnd;
+    else if (now >= r.startTs) {
+      const plannedDur = r.plan[i].min * MIN;
+      drift = (cur.actualStart - cur.plannedStart) + Math.max(0, (now - cur.actualStart) - plannedDur);
+    }
+    const dm = Math.round(drift / MIN);
+    $('stPace').textContent = dm === 0 ? 'on plan' : dm > 0 ? `+${dm} min` : `${dm} min`;
+    $('stPace').style.color = dm > 1 ? 'var(--bad)' : dm < -1 ? 'var(--ok)' : '';
+
+    const status = $('status'), cd = $('countdown'), bar = $('blockBar');
+    cd.classList.remove('warn', 'bad'); bar.classList.remove('warn', 'bad');
+    status.className = 'status ok';
+
+    let titleText;
+    if (now < r.startTs) {
+      $('nowLabel').textContent = 'Starts in';
+      $('nowName').textContent = r.plan[0].name;
+      cd.textContent = fmtDur(r.startTs - now);
+      $('nowSub').textContent = `Exam starts ${fmtClock(r.startTs)} · ends ${fmtClock(r.endTs)}`;
+      bar.firstElementChild.style.width = '0%';
+      status.textContent = 'Waiting for the start time.';
+      titleText = `Starts in ${fmtDur(r.startTs - now)}`;
+    } else if (r.done) {
+      $('nowLabel').textContent = 'Finished';
+      $('nowName').textContent = 'All blocks complete';
+      cd.textContent = fmtDur(Math.max(0, r.endTs - now));
+      $('nowSub').textContent = now < r.endTs ? 'Spare time before the hard end. Use it to re-check.' : 'Exam time is over.';
+      bar.firstElementChild.style.width = '100%';
+      status.textContent = drift <= 0 ? `Finished ${fmtMin(-drift)} ahead of plan.` : `Finished ${fmtMin(drift)} behind plan.`;
+      titleText = 'Done';
+    } else {
+      const end = cur.actualStart + cur.budget;
+      const left = end - now;
+      const elapsed = now - cur.actualStart;
+      $('nowLabel').textContent = `Block ${i + 1} of ${n}`;
+      $('nowName').textContent = r.plan[i].name;
+      cd.textContent = left >= 0 ? fmtDur(left) : '+' + fmtDur(-left);
+      const budgetNote = Math.abs(cur.budget - r.plan[i].min * MIN) > 30000 ? ` (planned ${r.plan[i].min} min)` : '';
+      $('nowSub').textContent = `Budget ${fmtMin(cur.budget)}${budgetNote} · until ${fmtClock(end)}`;
+      bar.firstElementChild.style.width = Math.min(100, cur.budget ? elapsed / cur.budget * 100 : 100) + '%';
+      const warnMs = settings.warnMin * MIN;
+      const hasNext = i < n - 1;
+      if (left < 0) {
+        cd.classList.add('bad'); bar.classList.add('bad');
+        status.className = 'status bad';
+        status.textContent = hasNext ? `Over by ${fmtMin(-left)}. Move to "${r.plan[i + 1].name}". ${shrinkText(now)}` : `Over by ${fmtMin(-left)}. Finish now.`;
+      } else if (left <= Math.max(warnMs, 60000)) {
+        cd.classList.add('warn'); bar.classList.add('warn');
+        status.className = 'status warn';
+        status.textContent = hasNext ? `Wrap up. Next: "${r.plan[i + 1].name}".` : 'Wrap up. This is the last block.';
+      } else {
+        status.textContent = dm > 1 ? `On budget for this block. Overall ${dm} min behind the original plan, so later blocks have been shortened.`
+          : dm < -1 ? `On budget. ${-dm} min ahead of the original plan; the extra time has been spread over later blocks.`
+          : 'On track.';
+      }
+      titleText = `${left >= 0 ? '' : '+'}${fmtDur(Math.abs(left))} · ${r.plan[i].name}`;
+    }
+    document.title = flashMsg && (Math.floor(now / 700) % 2) ? `⚠ ${flashMsg}` : titleText;
+
+    // Next card
+    const proj = projectedBudgets(Math.max(now, r.startTs));
+    if (!r.done && i < n - 1) {
+      $('nextCard').classList.remove('hidden');
+      $('nextName').textContent = r.plan[i + 1].name;
+      const b = proj[0], pm = r.plan[i + 1].min;
+      const startAt = Math.max(now, cur.actualStart + cur.budget);
+      $('nextMeta').textContent = `${fmtMin(b)}${Math.abs(b - pm * MIN) > 30000 ? ` (planned ${pm} min)` : ''} · starts ~${fmtClock(startAt)} · planned ${fmtClock(r.blocks[i + 1].plannedStart)}`;
+    } else {
+      $('nextCard').classList.add('hidden');
+    }
+
+    // Overall progress
+    const total = r.endTs - r.startTs;
+    $('overallBar').style.width = Math.min(100, Math.max(0, (now - r.startTs) / total * 100)) + '%';
+
+    // Timeline
+    const tl = $('timeline');
+    tl.textContent = '';
+    r.plan.forEach((b, k) => {
+      const blk = r.blocks[k];
+      const li = document.createElement('li');
+      const state = (r.done || k < i) ? 'done' : k === i ? 'cur' : 'todo';
+      li.className = state;
+      const dot = document.createElement('span'); dot.className = 'dot';
+      const mid = document.createElement('div');
+      const nm = document.createElement('div'); nm.textContent = b.name;
+      const meta = document.createElement('div'); meta.className = 'meta num';
+      meta.textContent = `Planned ${fmtClock(blk.plannedStart)}–${fmtClock(blk.plannedEnd)} · ${b.min} min${b.fixed ? ' · fixed' : ''}`;
+      mid.append(nm, meta);
+      const right = document.createElement('div'); right.className = 'right';
+      if (state === 'done') {
+        const used = blk.actualEnd - blk.actualStart, diff = used - b.min * MIN;
+        right.innerHTML = `${fmtMin(used)} <span class="${diff > 30000 ? 'chg-down' : diff < -30000 ? 'chg-up' : 'muted'}">(${diff >= 0 ? '+' : '−'}${fmtMin(Math.abs(diff))})</span>`;
+      } else if (state === 'cur') {
+        right.textContent = now < r.startTs ? `${fmtMin(blk.budget)}` : `${fmtMin(now - blk.actualStart)} / ${fmtMin(blk.budget)}`;
+      } else {
+        const ms = proj[k - i - 1];
+        const d = ms - b.min * MIN;
+        const span = document.createElement('span');
+        span.textContent = fmtMin(ms);
+        if (d < -30000) span.className = 'chg-down'; else if (d > 30000) span.className = 'chg-up';
+        right.append(span);
+      }
+      li.append(dot, mid, right);
+      tl.appendChild(li);
+    });
+
+    $('undoBtn').disabled = !r.history.length;
+    $('nextBtn').disabled = r.done || now < r.startTs;
+    $('nextBtn').firstChild.textContent = i < n - 1 ? 'Next stage ' : 'Finish ';
+
+    // Summary
+    $('summaryPanel').classList.toggle('hidden', !r.done);
+    if (r.done) renderSummary();
+
+    checkAlerts(now);
+  }
+
+  function renderSummary() {
+    const t = $('summary');
+    if (t.dataset.rendered === String(run.blocks[run.blocks.length - 1].actualEnd)) return;
+    t.dataset.rendered = String(run.blocks[run.blocks.length - 1].actualEnd);
+    t.innerHTML = '<tr><th>Block</th><th>Planned</th><th>Actual</th><th>Diff</th></tr>';
+    run.plan.forEach((b, k) => {
+      const blk = run.blocks[k];
+      const used = (blk.actualEnd || 0) - (blk.actualStart || 0);
+      const diff = used - b.min * MIN;
+      const tr = document.createElement('tr');
+      [b.name, `${b.min} min`, fmtMin(used), `${diff >= 0 ? '+' : '−'}${fmtMin(Math.abs(diff))}`].forEach(v => {
+        const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+      });
+      t.appendChild(tr);
+    });
+  }
+
+  // ---------- Wake lock (keeps phone/laptop screen on) ----------
+  let wakeLock = null;
+  async function requestWakeLock() {
+    try { if ('wakeLock' in navigator && run && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { requestWakeLock(); render(); } });
+
+  // ---------- Settings UI ----------
+  function bindSettings() {
+    $('warnMin').value = settings.warnMin;
+    $('nagMin').value = settings.nagMin;
+    $('sound').checked = settings.sound;
+    $('autoAdvance').checked = settings.autoAdvance;
+    $('warnMin').addEventListener('change', e => { settings.warnMin = Math.max(0, Math.min(15, Number(e.target.value) || 0)); e.target.value = settings.warnMin; saveSettings(); });
+    $('nagMin').addEventListener('change', e => { settings.nagMin = Math.max(1, Math.min(15, Number(e.target.value) || 1)); e.target.value = settings.nagMin; saveSettings(); });
+    $('sound').addEventListener('change', e => { settings.sound = e.target.checked; saveSettings(); if (settings.sound) unlockAudio(); });
+    $('autoAdvance').addEventListener('change', e => { settings.autoAdvance = e.target.checked; saveSettings(); });
+    updateNotifState();
+  }
+  function updateNotifState() {
+    const el = $('notifState'), btn = $('notifBtn');
+    if (!('Notification' in window)) { el.textContent = 'Not supported here; on-page alerts and sound still work.'; btn.disabled = true; return; }
+    const p = Notification.permission;
+    el.textContent = p === 'granted' ? 'Enabled' : p === 'denied' ? 'Blocked in browser settings; on-page alerts still work.' : 'Off';
+    btn.disabled = p !== 'default';
+  }
+
+  // ---------- Wiring ----------
+  $('addBlock').onclick = () => { plan.push({ name: 'New block', min: 10, fixed: false }); savePlan(); renderPlan(); };
+  $('resetPlan').onclick = () => { if (confirm('Replace your plan with the default plan?')) { plan = clone(DEFAULT_PLAN); savePlan(); renderPlan(); } };
+  document.querySelectorAll('input[name=startMode]').forEach(r => r.addEventListener('change', renderPlan));
+  $('startAt').addEventListener('change', () => { store.set('emba.startAt', $('startAt').value); renderPlan(); });
+  $('notifBtn').onclick = async () => { try { await Notification.requestPermission(); } catch {} updateNotifState(); };
+  $('testBtn').onclick = () => { unlockAudio(); notify('move', 'Move on → Reading and numbers', 'This is a test alert. You should see this banner, hear a sound, and (if enabled) get a desktop notification.'); };
+  $('startBtn').onclick = () => {
+    if (!plan.length) return;
+    unlockAudio();
+    const mode = document.querySelector('input[name=startMode]:checked').value;
+    const startTs = mode === 'now' ? Date.now() : tsForTime($('startAt').value);
+    const total = planTotalMin(plan) * MIN;
+    if (startTs + total < Date.now()) { alert('That start time plus the plan length is already in the past. Check the start time.'); return; }
+    run = createRun(startTs);
+    saveRun(); requestWakeLock(); render();
+    window.scrollTo(0, 0);
+  };
+  $('nextBtn').onclick = () => { unlockAudio(); advance(); };
+  $('undoBtn').onclick = undo;
+  $('stopBtn').onclick = () => {
+    if (!confirm('End this timer and go back to setup? Progress will be cleared.')) return;
+    run = null; saveRun(); closeModal();
+    if (wakeLock) { try { wakeLock.release(); } catch {} wakeLock = null; }
+    renderPlan(); render();
+  };
+  $('mMove').onclick = () => { unlockAudio(); advance(); };
+  $('mLater').onclick = closeModal;
+  $('themeBtn').onclick = () => {
+    const cur = document.documentElement.dataset.theme;
+    const dark = cur ? cur === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+    store.set('emba.theme', document.documentElement.dataset.theme);
+  };
+  document.addEventListener('keydown', (e) => {
+    if (!run || e.target.matches('input, textarea')) return;
+    if (e.key === 'n' || e.key === 'N' || e.key === 'ArrowRight') { e.preventDefault(); unlockAudio(); advance(); }
+    else if (e.key === 'u' || e.key === 'U') { e.preventDefault(); undo(); }
+    else if (e.key === 'Escape') closeModal();
+  });
+  document.addEventListener('pointerdown', unlockAudio, { once: true });
+
+  // ---------- Boot ----------
+  const savedTheme = store.get('emba.theme', null);
+  if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+  const savedStart = store.get('emba.startAt', null);
+  if (savedStart) $('startAt').value = savedStart;
+  bindSettings();
+  renderPlan();
+  render();
+  if (run) requestWakeLock();
+  setInterval(render, 500);
+  // Re-render the setup clock column each minute when "Start now" is selected
+  setInterval(() => { if (!run) renderPlan(); }, 30000);
+})();
+</script>
+</body>
+</html>
