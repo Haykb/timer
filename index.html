@@ -264,6 +264,8 @@
   ];
   const DEFAULT_SETTINGS = { warnMin: 2, nagMin: 2, sound: true, autoAdvance: false };
   const MIN = 60000;
+  // Present only inside the macOS desktop app (desktop/preload.js); null in a normal browser.
+  const desktop = window.desktop || null;
   const STALE_MS = 3 * MIN; // alerts older than this (e.g. after a reload) are skipped silently
 
   // ---------- Storage (never trusted to exist) ----------
@@ -524,6 +526,7 @@
   }
 
   function notify(kind, title, body) {
+    if (desktop) desktop.alert({ kind, title, body });
     toast(kind, title, body);
     beep(kind);
     try { if (navigator.vibrate && kind !== 'warn') navigator.vibrate([200, 100, 200]); } catch {}
@@ -589,7 +592,12 @@
     const now = Date.now();
     $('wallclock').textContent = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     showView();
-    if (!run) { document.title = 'EMBA Exam Timer'; return; }
+    if (!run) {
+      document.title = 'EMBA Exam Timer';
+      if (desktop) desktop.status({ running: false, phase: 'idle', trayTitle: '' });
+      return;
+    }
+    const st = { running: true, level: 'ok' };
 
     const r = run, i = r.idx, cur = r.blocks[i];
     const n = r.plan.length;
@@ -622,6 +630,7 @@
       bar.firstElementChild.style.width = '0%';
       status.textContent = 'Waiting for the start time.';
       titleText = `Starts in ${fmtDur(r.startTs - now)}`;
+      Object.assign(st, { phase: 'waiting', label: 'Starts in', blockName: r.plan[0].name, countdown: cd.textContent });
     } else if (r.done) {
       $('nowLabel').textContent = 'Finished';
       $('nowName').textContent = 'All blocks complete';
@@ -630,6 +639,7 @@
       bar.firstElementChild.style.width = '100%';
       status.textContent = drift <= 0 ? `Finished ${fmtMin(-drift)} ahead of plan.` : `Finished ${fmtMin(drift)} behind plan.`;
       titleText = 'Done';
+      Object.assign(st, { phase: 'done', label: 'Finished', blockName: 'All blocks complete', countdown: cd.textContent, line: $('nowSub').textContent });
     } else {
       const end = cur.actualStart + cur.budget;
       const left = end - now;
@@ -656,6 +666,10 @@
           : 'On track.';
       }
       titleText = `${left >= 0 ? '' : '+'}${fmtDur(Math.abs(left))} · ${r.plan[i].name}`;
+      Object.assign(st, {
+        phase: 'active', label: `Block ${i + 1} of ${n}`, blockName: r.plan[i].name, countdown: cd.textContent,
+        level: left < 0 ? 'bad' : left <= Math.max(warnMs, 60000) ? 'warn' : 'ok',
+      });
     }
     document.title = flashMsg && (Math.floor(now / 700) % 2) ? `⚠ ${flashMsg}` : titleText;
 
@@ -714,6 +728,21 @@
     // Summary
     $('summaryPanel').classList.toggle('hidden', !r.done);
     if (r.done) renderSummary();
+
+    if (desktop) {
+      if (st.phase !== 'done') {
+        st.line = (!r.done && i < n - 1)
+          ? (st.level === 'bad' ? `Move to → ${r.plan[i + 1].name} (${fmtMin(proj[0])})` : `Next: ${r.plan[i + 1].name} · ${fmtMin(proj[0])}`)
+          : 'Last block. Finish before the hard end.';
+      }
+      const short = st.blockName.length > 22 ? st.blockName.slice(0, 21) + '…' : st.blockName;
+      Object.assign(st, {
+        examLeft: $('stRemain').textContent, endAt: fmtClock(r.endTs), pace: $('stPace').textContent,
+        canNext: !$('nextBtn').disabled, canUndo: !$('undoBtn').disabled, isLast: i === n - 1,
+        trayTitle: st.phase === 'done' ? 'Done' : `${st.countdown} ${short}`,
+      });
+      desktop.status(st);
+    }
 
     checkAlerts(now);
   }
@@ -803,6 +832,10 @@
     else if (e.key === 'Escape') closeModal();
   });
   document.addEventListener('pointerdown', unlockAudio, { once: true });
+  if (desktop) desktop.onCommand((c) => {
+    if (c === 'next') { unlockAudio(); advance(); }
+    else if (c === 'undo') undo();
+  });
 
   // ---------- Boot ----------
   const savedTheme = store.get('emba.theme', null);

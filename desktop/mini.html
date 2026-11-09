@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Mini timer</title>
+<style>
+  :root { --bg: rgba(30,30,30,.94); --text: #f2f2f2; --muted: #a8a8a8; --ok: #4cc27f; --warn: #f0b44c; --bad: #ff6b6b; --accent: #6f9bff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
+    font: 13px/1.3 -apple-system, system-ui, sans-serif; color: var(--text); user-select: none; }
+  .card { height: 100%; background: var(--bg); border-radius: 12px; padding: 10px 12px 10px;
+    border: 2px solid transparent; display: flex; flex-direction: column; gap: 4px; -webkit-app-region: drag; }
+  .card.warn { border-color: var(--warn); }
+  .card.bad { border-color: var(--bad); }
+  .card.flash { animation: flash .5s ease-in-out 6; }
+  @keyframes flash { 50% { background: rgba(255,107,107,.55); } }
+  .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 11px;
+    text-transform: uppercase; letter-spacing: .05em; }
+  .name { font-weight: 650; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .cd { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  .warn .cd { color: var(--warn); } .bad .cd { color: var(--bad); }
+  .line { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bad .line { color: var(--bad); font-weight: 650; }
+  button { -webkit-app-region: no-drag; font: inherit; cursor: pointer; border-radius: 7px; border: 1px solid #444;
+    background: #2c2c2c; color: var(--text); padding: 5px 10px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 650; }
+  button.x { border: 0; background: none; color: var(--muted); padding: 0 2px; font-size: 13px; }
+  button:disabled { opacity: .4; cursor: default; }
+  .btns { display: flex; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="top">
+    <span id="label">No timer running</span>
+    <span class="btns">
+      <button class="x" id="open" title="Open main window">⤢</button>
+      <button class="x" id="hide" title="Hide (⌃⌥⌘M to show again)">✕</button>
+    </span>
+  </div>
+  <div class="name" id="name">Open the main window to start</div>
+  <div class="row">
+    <div class="cd" id="cd">--:--</div>
+    <div class="btns">
+      <button id="undo" title="Undo (⌃⌥⌘U)">↶</button>
+      <button class="primary" id="next" title="Next stage (⌃⌥⌘N)">Next ▸</button>
+    </div>
+  </div>
+  <div class="line" id="line"></div>
+</div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const d = window.desktop;
+  $('next').onclick = () => d.command('next');
+  $('undo').onclick = () => d.command('undo');
+  $('open').onclick = () => d.command('show-main');
+  $('hide').onclick = () => d.command('hide-mini');
+  d.onStatus((s) => {
+    const card = $('card');
+    card.classList.toggle('warn', s.level === 'warn');
+    card.classList.toggle('bad', s.level === 'bad');
+    if (!s.running) {
+      $('label').textContent = 'No timer running';
+      $('name').textContent = 'Open the main window to start';
+      $('cd').textContent = '--:--'; $('line').textContent = '';
+      $('next').disabled = true; $('undo').disabled = true;
+      return;
+    }
+    $('label').textContent = `${s.label} · ${s.examLeft} left`;
+    $('name').textContent = s.blockName;
+    $('name').title = s.blockName;
+    $('cd').textContent = s.countdown;
+    $('line').textContent = s.line || '';
+    $('line').title = s.line || '';
+    $('next').disabled = !s.canNext;
+    $('next').textContent = s.isLast ? 'Finish ✓' : 'Next ▸';
+    $('undo').disabled = !s.canUndo;
+  });
+  d.onAlert((a) => {
+    if (a.kind === 'warn') return;
+    const c = $('card');
+    c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash');
+  });
+</script>
+</body>
+</html>

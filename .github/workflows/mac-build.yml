@@ -1,0 +1,56 @@
+name: macOS app
+
+on:
+  push:
+    paths:
+      - "index.html"
+      - "desktop/**"
+      - "build/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/mac-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest   # Apple Silicon (arm64)
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build .app (unsigned)
+        run: npm run dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      # Apple Silicon refuses to run unsigned code; an ad-hoc signature is enough for personal use.
+      - name: Ad-hoc sign
+        run: |
+          APP="dist/mac-arm64/EMBA Exam Timer.app"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      # Launch the packaged app on this Mac: start a timer, press Next/Undo through the
+      # floating window, check the window updates and the Mac is kept awake.
+      - name: Smoke test packaged app
+        run: '"dist/mac-arm64/EMBA Exam Timer.app/Contents/MacOS/EMBA Exam Timer" --smoke-test'
+
+      - name: Make DMG
+        run: |
+          mkdir dmgroot
+          cp -R "dist/mac-arm64/EMBA Exam Timer.app" dmgroot/
+          ln -s /Applications dmgroot/Applications
+          hdiutil create -volname "EMBA Exam Timer" -srcfolder dmgroot -ov -format UDZO EMBA-Exam-Timer-arm64.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EMBA-Exam-Timer-macOS-arm64
+          path: EMBA-Exam-Timer-arm64.dmg
+          retention-days: 30

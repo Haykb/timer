@@ -1,0 +1,32 @@
+{
+  "name": "emba-exam-timer",
+  "productName": "EMBA Exam Timer",
+  "version": "1.0.0",
+  "description": "Staged exam timer with move-on alerts and a floating always-on-top window",
+  "author": "haykb",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "desktop/main.js",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke-test",
+    "dist:mac": "electron-builder --mac dir --arm64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "com.haykb.emba-exam-timer",
+    "productName": "EMBA Exam Timer",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["index.html", "desktop/**/*", "package.json"],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "identity": null,
+      "target": [{ "target": "dir", "arch": ["arm64"] }],
+      "extendInfo": { "NSUserNotificationAlertStyle": "alert" }
+    }
+  }
+}
