@@ -44,6 +44,7 @@ When you move to a new block, the time left before the hard end is split across 
 ### During the exam
 
 - The **floating timer** appears in the top-right corner when a run starts. It stays on top of full-screen Google Sheets. Drag it anywhere; ✕ hides it, ⤢ opens the main window.
+- **If the floating timer doesn't appear over full-screen Sheets:** click the menu-bar clock icon and tick **Full-screen fallback: hide Dock icon**. The app then has no Dock icon (reach it from the menu-bar icon or ⤢ on the floating timer). The setting is remembered.
 - Shortcuts work from any app, so you never have to leave Sheets:
 
   | Shortcut | Action |

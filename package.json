@@ -1,7 +1,7 @@
 {
   "name": "emba-exam-timer",
   "productName": "EMBA Exam Timer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Staged exam timer with move-on alerts and a floating always-on-top window",
   "author": "haykb",
   "license": "UNLICENSED",

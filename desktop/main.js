@@ -11,6 +11,7 @@
 
 const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, powerSaveBlocker, nativeImage, screen, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 const SMOKE = process.argv.includes('--smoke-test');
 const PRELOAD = path.join(__dirname, 'preload.js');
@@ -33,6 +34,8 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
 }
 
 function start() {
+  loadPrefs();
+  if (prefs.dockHidden && app.dock) app.dock.hide();
   createMain();
   createMini();
   createTray();
@@ -70,17 +73,50 @@ function createMini() {
     frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: true,
     resizable: false, minimizable: false, maximizable: false, fullscreenable: false,
     alwaysOnTop: true, skipTaskbar: true, show: false,
+    // macOS: a normal window, even always-on-top, is not allowed onto another app's full-screen
+    // Space. 'panel' (NSWindowStyleMaskNonactivatingPanel) is Electron's documented way to float
+    // over full-screen apps; it also means clicking the mini window doesn't take focus from Sheets.
+    ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
     webPreferences: webPrefs(),
   });
-  // 'screen-saver' level + visibleOnFullScreen = stays visible over full-screen apps on macOS.
-  miniWin.setAlwaysOnTop(true, 'screen-saver');
-  miniWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  pinMiniOnTop();
   miniWin.loadFile(path.join(__dirname, 'mini.html'));
   miniWin.on('close', (e) => {
     if (quitting) return;
     e.preventDefault();
     hideMini();
   });
+}
+
+function pinMiniOnTop() {
+  if (!miniWin) return;
+  miniWin.setAlwaysOnTop(true, 'screen-saver');
+  miniWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: !!prefs.dockHidden });
+  if (process.platform === 'darwin') miniWin.setHiddenInMissionControl(true);
+}
+
+// ---------- Persistent desktop prefs ----------
+// Fallback for full screen: an app with no Dock icon (an "accessory" app) is always allowed to
+// put windows over full-screen apps. Off by default; toggled from the menu-bar menu.
+const PREFS_FILE = () => path.join(app.getPath('userData'), 'desktop-prefs.json');
+let prefs = { dockHidden: false };
+function loadPrefs() {
+  try { prefs = Object.assign(prefs, JSON.parse(fs.readFileSync(PREFS_FILE(), 'utf8'))); } catch {}
+}
+function savePrefs() {
+  try { fs.writeFileSync(PREFS_FILE(), JSON.stringify(prefs)); } catch (e) { console.warn('Could not save prefs', e); }
+}
+function applyDockMode() {
+  if (!app.dock) return;
+  if (prefs.dockHidden) app.dock.hide(); else app.dock.show();
+  pinMiniOnTop();
+  if (last.running && miniWanted && miniWin) miniWin.showInactive();
+}
+function toggleDockHidden() {
+  prefs.dockHidden = !prefs.dockHidden;
+  savePrefs();
+  applyDockMode();
+  refreshMenu(true);
 }
 
 function showMain() {
@@ -124,6 +160,12 @@ function refreshMenu(force) {
     { label: (miniWin && miniWin.isVisible()) ? 'Hide floating timer' : 'Show floating timer', accelerator: 'Control+Alt+Command+M', click: toggleMini },
     { label: 'Open main window', click: showMain },
     { type: 'separator' },
+    ...(app.dock ? [{
+      label: 'Full-screen fallback: hide Dock icon', type: 'checkbox', checked: !!prefs.dockHidden,
+      toolTip: 'Use only if the floating timer still does not appear over full-screen apps',
+      click: toggleDockHidden,
+    }] : []),
+    { label: `Version ${app.getVersion()}`, enabled: false },
     { label: 'Quit EMBA Exam Timer', accelerator: 'Command+Q', click: () => app.quit() },
   ]));
 }
@@ -208,7 +250,13 @@ function runSmokeTest() {
     await wait(1500);
     if (last.blockName !== 'Skim') return fail('Undo did not work: ' + JSON.stringify(last));
     if (blockerId === null || !powerSaveBlocker.isStarted(blockerId)) return fail('power save blocker not active');
-    console.log('SMOKE OK', JSON.stringify({ tray: last.trayTitle, mini: miniName2, onAllSpaces: miniWin.isVisibleOnAllWorkspaces(), alwaysOnTop: miniWin.isAlwaysOnTop() }));
+    if (app.dock) {   // macOS: exercise the full-screen fallback on and off
+      toggleDockHidden(); await wait(1000);
+      if (!miniWin.isVisible()) return fail('mini window hidden after hiding Dock icon');
+      toggleDockHidden(); await wait(1000);
+      if (!miniWin.isVisible() || prefs.dockHidden) return fail('mini window lost after restoring Dock icon');
+    }
+    console.log("SMOKE OK", JSON.stringify({ version: app.getVersion(), tray: last.trayTitle, mini: miniName2, onAllSpaces: miniWin.isVisibleOnAllWorkspaces(), alwaysOnTop: miniWin.isAlwaysOnTop() }));
     await mainWin.webContents.executeJavaScript(`localStorage.clear(); true`);
     quitting = true;
     app.exit(0);
